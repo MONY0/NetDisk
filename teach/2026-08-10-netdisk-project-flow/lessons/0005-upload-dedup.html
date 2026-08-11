@@ -1,0 +1,48 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第5课：上传与秒传</title><link rel="stylesheet" href="../assets/course.css"></head><body><main>
+<header class="hero"><div class="eyebrow">Lesson 05 · 12 minutes</div><h1>上传状态机与内容去重</h1><p class="lead">目标：能逐包复述普通上传与秒传分支，并解释ACK、f_state和引用计数分别解决什么问题。</p><div class="meta"><span class="pill">64 KiB分块</span><span class="pill">MD5秒传</span><span class="pill">引用计数</span></div></header>
+
+<h2>1. 客户端准备</h2>
+<ol><li>读取 <code>QFileInfo</code>：文件名、大小、路径。</li><li>同步遍历文件，计算MD5。</li><li>生成 <code>hhmmsszzz</code>任务时间戳，并在当前map中避碰。</li><li>以二进制方式打开源文件。</li><li>保存到 <code>timestamp → FileInfo</code>。</li><li>发送上传元数据请求。</li></ol>
+<div class="callout warn"><p>整文件MD5在GUI线程执行，大文件会阻塞界面；文件大小使用32位int，不能可靠支持2 GiB以上文件。</p></div>
+
+<h2>2. 服务端三条分支</h2>
+<pre><code>收到UPLOAD_FILE_RQ
+├─ 参数/路径/MD5非法 → failed
+├─ 同用户同目录同名 → name_exists
+├─ MD5命中已完成文件 → 插入t_user_file → QUICK_UPLOAD_RS
+└─ 未命中
+   ├─ 创建物理临时文件
+   ├─ 插入t_file(f_state=0, f_count=0)
+   ├─ 插入t_user_file
+   └─ 返回fileid → 开始传块</code></pre>
+
+<h2>3. 普通上传的数据泵</h2>
+<div class="flow"><div>客户端 fread<br>最多64 KiB</div><div>FILE_CONTENT_RQ</div><div>服务端 writeAll</div><div>FILE_CONTENT_RS</div><div>客户端更新pos<br>发送下一块</div></div>
+<p>这是一种 stop-and-wait 应用层协议：同时最多只有一个未确认块。它自然形成背压，避免发送方无限堆积；但吞吐上限会受到RTT影响。</p>
+<div class="card"><p>若块为64 KiB、往返时延50 ms，忽略其他开销，单任务上限约为 <code>64 KiB / 0.05 s ≈ 1.25 MiB/s</code>。优化方向是滑动窗口，而不只是增大块。</p></div>
+
+<h2>4. f_state、ACK、MD5别混为一谈</h2>
+<table><thead><tr><th>机制</th><th>职责</th></tr></thead><tbody><tr><td>f_state=0/1</td><td>隔离上传中对象与可用对象；秒传只命中状态1</td></tr><tr><td>每块ACK</td><td>确认该块被业务处理，推进发送状态机</td></tr><tr><td>MD5</td><td>当前用于查重键；源码没有在服务端最终重新计算完整文件MD5</td></tr><tr><td>f_count</td><td>记录物理对象被多少用户文件关系引用</td></tr></tbody></table>
+<div class="callout danger"><p>不能说“服务端通过MD5保证完整性”。服务端相信客户端声明的MD5；如果客户端恶意或本地文件在计算后被修改，错误内容可能以该MD5入库并污染后续秒传。</p></div>
+
+<h2>5. 秒传的数据模型</h2>
+<pre><code>t_file      = 物理对象：path / size / md5 / state / count
+t_user_file = 逻辑文件：user / file / dir / name / time
+
+同一t_file ← 用户A的关系
+           ← 用户B的关系
+           ← 用户A另一个目录的关系</code></pre>
+<p>新增关系由触发器增加引用数；删除关系减少引用数。只有引用降到0，才考虑删除物理对象。</p>
+
+<h2>6. 并发一致性追问</h2>
+<p>“先查重、再插入”存在TOCTOU：两个并发请求都可能查到不存在，然后都插入。因此数据库必须用 <code>UNIQUE(u_id, f_dir, f_name)</code>作为最终防线。当前优化脚本只把唯一索引留在注释中，不能假设部署环境已经建立。</p>
+
+<h2>7. 面试口述</h2>
+<div class="card"><p>“上传先发元数据，服务端检查同目录重名和MD5秒传。命中已完成物理文件时只新增用户文件关系；未命中则创建f_state=0的物理对象和关系，返回fileid。随后客户端每次发64 KiB，服务端完整写盘后ACK，客户端收到ACK才推进pos并发下一块，完成后服务端把f_state改为1。物理文件和用户逻辑文件分表，通过引用计数支持去重删除。当前MD5没有在服务端最终重算，所以只能说用于去重，不能声称完成了强完整性校验。”</p></div>
+
+<h2>8. 检索练习</h2>
+<div class="card"><p><strong>问题：</strong>为什么秒传查询必须限定 <code>f_state=1</code>？为什么预查询不能替代唯一索引？</p><button data-reveal="a5">检查参考答案</button><div class="answer" id="a5">状态1保证被复用的是完整对象；状态0可能只有部分内容。预查询与插入不是一个原子动作，并发请求可同时通过检查；唯一索引由数据库在写入点保证最终唯一性。</div></div>
+
+<p class="source">一手代码：<a href="../../../ckernel.cpp">ckernel.cpp 403—604行附近</a>、<a href="../../../NetDisk_server/NetDisk/src/clogic.cpp">clogic.cpp 249—506行附近</a>、<a href="../../../database_optimize.sql">database_optimize.sql</a>。请闭卷画出秒传与普通上传分叉。</p>
+<nav class="lesson-nav"><a href="0004-server-concurrency.html">← 上一课</a><a href="0006-download-directory-sharing.html">下一课：下载、目录与分享 →</a></nav>
+<script src="../assets/quiz.js"></script></main></body></html>

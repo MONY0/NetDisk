@@ -1,0 +1,39 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第1课：建立项目全景</title><link rel="stylesheet" href="../assets/course.css"></head><body><main>
+<header class="hero"><div class="eyebrow">Lesson 01 · 8 minutes</div><h1>先建立全景，再进入代码</h1><p class="lead">本课的胜利条件：你能不看源码，用 90 秒讲清系统边界、核心组件和一条请求的往返路径。</p><div class="meta"><span class="pill">架构地图</span><span class="pill">真实边界</span><span class="pill">面试开场</span></div></header>
+
+<h2>1. 先校正项目定位</h2>
+<div class="callout fact"><p>这是 Qt 5 Windows 客户端 + Linux C++ 服务端的教学/个人网盘。客户端使用 WinSock、Qt Widgets 和 SQLite；服务端使用 TCP、epoll、pthread 线程池、MySQL 与 Linux 文件系统。</p></div>
+<div class="callout warn"><p>不要称它为“生产级分布式网盘”。仓库没有完整首次建库脚本、自动化测试和匹配当前源码的运行验证；服务器文件仍落在单机硬编码目录。</p></div>
+
+<h2>2. 一眼看懂组件</h2>
+<div class="flow"><div>Qt UI<br>Login/MainDialog</div><div>CKernel<br>客户端中枢</div><div>TcpClient<br>长度帧</div><div>epoll + 线程池</div><div>CLogic<br>业务处理</div><div>MySQL + 文件系统</div></div>
+<table><thead><tr><th>层</th><th>主要类</th><th>职责</th></tr></thead><tbody>
+<tr><td>客户端界面</td><td>LoginDialog、MainDialog</td><td>采集操作、显示目录和传输状态</td></tr>
+<tr><td>客户端控制</td><td>CKernel</td><td>协议封装、任务管理、SQLite、界面协调</td></tr>
+<tr><td>客户端网络</td><td>TcpClientMediator、TcpClient</td><td>连接、长度帧收发、把数据转成 Qt 信号</td></tr>
+<tr><td>服务端网络</td><td>Block_Epoll_Net、thread_pool</td><td>连接就绪、完整收包、任务排队和执行</td></tr>
+<tr><td>服务端控制</td><td>TcpKernel、CLogic</td><td>协议路由、认证和文件业务</td></tr>
+<tr><td>持久化</td><td>CMysql、CSqlite、Linux FS</td><td>元数据、任务缓存、文件本体</td></tr>
+</tbody></table>
+
+<h2>3. 一条请求如何往返</h2>
+<pre><code>用户点击上传
+→ MainDialog 发出 SIG_uploadFile
+→ CKernel 计算元数据并封装 STRU_UPLOAD_FILE_RQ
+→ TcpClient 加 4 字节包长并发送
+→ Block_Epoll_Net 收到完整帧并投递线程池
+→ TcpKernel 按协议号路由到 CLogic::UploadFileRq
+→ CLogic 操作 MySQL / 文件系统并返回响应
+→ 客户端协议映射找到响应处理函数
+→ CKernel 更新任务，MainDialog 更新界面</code></pre>
+
+<h2>4. 90秒口述模板</h2>
+<div class="card"><p>“这是一个 C/S 架构的个人网盘。Windows 客户端用 Qt 5 和 WinSock，Linux 服务端用 C++、epoll 和动态线程池，MySQL 保存用户与文件元数据，Linux 文件系统保存文件内容，客户端 SQLite 保存未完成传输任务。系统支持注册登录、文件/文件夹上传下载、MD5 秒传、分享、删除和断点续传。TCP 上层采用包长帧解决消息边界，文件按 64 KiB 分块并逐块确认。项目重点是网络消息处理、并发任务调度、文件去重和跨数据库/文件系统一致性；当前仍属于教学实现，身份绑定、协议可移植性和资源回收需要继续完善。”</p></div>
+
+<h2>5. 闭卷检索</h2>
+<div class="quiz" data-answer="C"><p><strong>哪条调用链最接近真实代码？</strong></p><p>A. UI → MySQL → TCP<br>B. TCP → UI → epoll<br>C. UI → CKernel → TCP<br>D. epoll → SQLite → UI</p><button data-choice="A">A</button> <button data-choice="B">B</button> <button data-choice="C">C</button> <button data-choice="D">D</button><p data-feedback></p></div>
+<div class="card"><p><strong>不看上文，用60秒回答：</strong>客户端、服务端和存储分别有哪些核心组件？一条上传请求经过哪些边界？</p><button data-reveal="a1">检查参考答案</button><div class="answer" id="a1">客户端是 UI、CKernel、Mediator/TcpClient、SQLite；服务端是 epoll网络层、线程池、TcpKernel/CLogic、MySQL和文件系统。请求从UI信号进入CKernel，经长度帧TCP到服务端，协议分发后操作数据库/文件，再按原路响应。</div></div>
+
+<p class="source">一手材料：<a href="../../../main.cpp">客户端 main.cpp</a>、<a href="../../../ckernel.cpp">ckernel.cpp</a>、<a href="../../../NetDisk_server/NetDisk/src/main.cpp">服务端 main.cpp</a>。遇到不清楚的地方，请继续向老师提问。</p>
+<nav class="lesson-nav"><a href="../reference/project-flow.html">全流程图</a><a href="0002-client-lifecycle.html">下一课：客户端生命周期 →</a></nav>
+<script src="../assets/quiz.js"></script></main></body></html>

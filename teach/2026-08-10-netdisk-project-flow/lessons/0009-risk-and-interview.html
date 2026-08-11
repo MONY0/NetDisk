@@ -1,0 +1,37 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第9课：风险审查与模拟面试</title><link rel="stylesheet" href="../assets/course.css"></head><body><main>
+<header class="hero"><div class="eyebrow">Lesson 09 · 15 minutes</div><h1>把缺陷讲成工程判断</h1><p class="lead">目标：不回避问题，也不把“证据不足”说成“已经失败”；用优先级、影响和修复路径回答压力面。</p><div class="meta"><span class="pill">事实分级</span><span class="pill">风险优先级</span><span class="pill">面试复述</span></div></header>
+
+<h2>1. 已核实事实、推断和未知</h2>
+<table><thead><tr><th>性质</th><th>例子</th><th>该怎么说</th></tr></thead><tbody>
+<tr><td>已核实</td><td>服务端未将clientfd与请求userid做鉴权绑定</td><td>明确指出代码证据与越权影响</td></tr>
+<tr><td>已核实</td><td>文件夹头协议类型初始化错误</td><td>说“当前源码有确定缺陷”</td></tr>
+<tr><td>合理推断</td><td>单MySQL连接和全局发送锁可能成为瓶颈</td><td>说“从代码推断，需压测确认”</td></tr>
+<tr><td>暂时未知</td><td>最大QPS、最大稳定连接数</td><td>不编数字，说明压测模型</td></tr>
+</tbody></table>
+
+<h2>2. 修复优先级</h2>
+<ol><li><strong>P0 身份绑定：</strong>登录后建立 <code>clientfd → userid/session</code>；业务忽略客户端声明的userid。</li><li><strong>P0 文件夹协议：</strong>修复协议常量并增加两端协议单测。</li><li><strong>P0 传输安全：</strong>TLS、服务端密码慢哈希、移除硬编码root密码。</li><li><strong>P1 生命周期：</strong>连接断开清理会话、fd、传输上下文；map改智能指针/串行执行。</li><li><strong>P1 协议：</strong>显式序列化、64位大小、request_id、transfer_id、版本。</li><li><strong>P1 完整性：</strong>分片摘要与服务端最终SHA-256。</li><li><strong>P2 性能：</strong>连接池、每连接发送队列、滑动窗口、后台哈希。</li><li><strong>P2 工程化：</strong>完整schema、测试、日志、指标和压测。</li></ol>
+
+<h2>3. 五层答题法</h2>
+<pre><code>1. 结论：用了什么/判断是什么
+2. 实现：项目具体调用链或数据结构
+3. 原理：为什么有效
+4. 取舍：代价、边界、失败条件
+5. 改进：如果生产化怎么做</code></pre>
+<p>示例：“为什么用EPOLLONESHOT？”先说防止同fd并发读取，再说代码何时重置，解释其语义，然后指出业务仍可能并发，最后给出连接级串行队列。</p>
+
+<h2>4. 模拟面试：先答再展开</h2>
+<div class="card"><p><strong>Q1：请从点击上传开始讲到文件可用于秒传。</strong></p><button data-reveal="m1">检查答案骨架</button><div class="answer" id="m1">UI信号→CKernel算元数据/MD5→上传元数据帧→服务端校验重名/MD5→未命中建f_state=0对象和关系→返回fileid→64KiB逐块ACK→完成关闭fd→f_state=1→以后MD5查询命中后仅新增关系。主动补充：服务端未最终重算MD5。</div></div>
+<div class="card"><p><strong>Q2：用了epoll，为什么还会被慢客户端拖住？</strong></p><button data-reveal="m2">检查答案骨架</button><div class="answer" id="m2">epoll只做就绪通知；接受后的客户端socket仍是阻塞的，recvAll在工作线程等待完整长度和包体。慢客户端会占工作线程。应改非阻塞状态机、读取到EAGAIN并设置连接级超时/配额。</div></div>
+<div class="card"><p><strong>Q3：查询SQL里已经带userid，为什么仍然越权？</strong></p><button data-reveal="m3">检查答案骨架</button><div class="answer" id="m3">SQL只能证明“这个userid拥有资源”，不能证明“发包连接属于这个userid”。userid来自可篡改包体。身份必须来自登录后服务端保存的会话绑定。</div></div>
+<div class="card"><p><strong>Q4：秒传是享元模式吗？</strong></p><button data-reveal="m4">检查答案骨架</button><div class="answer" id="m4">不严格是。它是持久化内容去重、关系复用和引用计数；经典享元主要共享大量内存对象的内部状态。可以说思想相似，不应硬套GoF名称。</div></div>
+<div class="card"><p><strong>Q5：支持多少并发？</strong></p><button data-reveal="m5">检查答案骨架</button><div class="answer" id="m5">仓库无可复现压测，不能编数字。先定义连接数、活跃传输数、文件分布、RTT、磁盘和数据库配置，再测吞吐、P95/P99、线程队列、DB等待、CPU、内存和fd数量。</div></div>
+
+<h2>5. 毕业检索</h2>
+<p>关闭所有课程页，用白纸画出：</p>
+<ol><li>系统六层组件。</li><li>一帧TCP消息。</li><li>服务端两个线程池任务。</li><li>普通上传与秒传分叉。</li><li>单文件下载握手。</li><li>上传/下载恢复的权威位置。</li><li>t_file与t_user_file关系。</li><li>三项P0缺陷。</li></ol>
+<div class="callout"><p>完成后把你的90秒项目介绍或任一问题答案发给老师。只有你实际复述并接受反馈后，才算形成学习记录；阅读完页面不等于掌握。</p></div>
+
+<p class="source">速查：<a href="../reference/interview-cheatsheet.html">面试速查表</a>、<a href="../reference/protocol-cheatsheet.html">协议速查表</a>、<a href="../reference/glossary.html">术语表</a>。需要模拟面试时，直接说“开始NetDisk模拟面试”。</p>
+<nav class="lesson-nav"><a href="0008-patterns-and-boundaries.html">← 上一课</a><a href="0001-project-map.html">回到课程入口 ↺</a></nav>
+<script src="../assets/quiz.js"></script></main></body></html>

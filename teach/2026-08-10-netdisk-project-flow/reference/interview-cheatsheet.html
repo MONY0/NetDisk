@@ -1,0 +1,27 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>NetDisk 面试速查</title><link rel="stylesheet" href="../assets/course.css"></head><body><main>
+<header class="hero"><div class="eyebrow">Reference · Interview</div><h1>面试前十分钟速查</h1><p class="lead">只看关键词，强迫自己口述；不要逐字背诵。</p></header>
+
+<h2>90秒开场关键词</h2><p>Qt 5 Windows客户端｜Linux C++服务端｜TCP长度帧｜LT epoll + ONESHOT｜动态线程池｜MySQL元数据｜Linux文件本体｜SQLite任务缓存｜64KiB逐块ACK｜MD5秒传｜断点续传｜教学实现边界。</p>
+
+<h2>五层回答</h2><pre><code>结论 → 项目实现 → 底层原理 → 代价/边界 → 生产改进</code></pre>
+
+<h2>十大必答</h2><table><thead><tr><th>问题</th><th>必须命中的关键词</th></tr></thead><tbody>
+<tr><td>如何解决粘包？</td><td>字节流、4字节包长、recvAll、范围校验、sendAll</td></tr>
+<tr><td>epoll模型？</td><td>LT、监听非阻塞、客户端阻塞、线程池、不是纯Reactor</td></tr>
+<tr><td>ONESHOT？</td><td>防同fd并发读；业务任务仍可能并发</td></tr>
+<tr><td>线程池？</td><td>环形队列、条件变量while、生产者消费者、阻塞业务移出事件循环</td></tr>
+<tr><td>上传？</td><td>元数据→重名/秒传→state0→64KiB ACK→state1</td></tr>
+<tr><td>秒传？</td><td>t_file/t_user_file、MD5+state1、只增关系、引用计数</td></tr>
+<tr><td>断点？</td><td>SQLite检查点、上传服务端长度、下载客户端长度、lseek/fseek</td></tr>
+<tr><td>设计模式？</td><td>单例、观察者、线程池；适配/策略/命令思想但不硬套</td></tr>
+<tr><td>最大缺陷？</td><td>clientfd未绑定userid、文件夹协议号、无TLS/慢哈希</td></tr>
+<tr><td>支持多少并发？</td><td>没有压测不编数字；定义模型再测P95/P99和资源</td></tr>
+</tbody></table>
+
+<h2>三句诚实边界</h2><ul><li>“这是从当前源码核实的事实。”</li><li>“这是从锁和连接模型推断的瓶颈，需要压测确认。”</li><li>“仓库没有对应数据，所以我不会给出未经验证的并发数字。”</li></ul>
+
+<h2>禁止夸大</h2><ul><li>不是全非阻塞Reactor。</li><li>MD5没有完成服务端最终完整性校验。</li><li>登录后没有可靠授权绑定。</li><li>文件大小仍是32位。</li><li>当前源码没有在匹配环境完成构建和压测证明。</li></ul>
+
+<h2>生产化顺序</h2><p>会话鉴权/TLS → 修协议号 → 生命周期与串行化 → 64位稳定协议 → 最终摘要 → 数据库连接池/发送队列/滑动窗口 → schema、测试、指标、压测。</p>
+
+<nav class="lesson-nav"><a href="glossary.html">← 术语表</a><a href="../lessons/0009-risk-and-interview.html">模拟面试 →</a></nav></main></body></html>

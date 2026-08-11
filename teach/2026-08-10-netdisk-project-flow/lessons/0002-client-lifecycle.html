@@ -1,0 +1,38 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第2课：客户端生命周期</title><link rel="stylesheet" href="../assets/course.css"></head><body><main>
+<header class="hero"><div class="eyebrow">Lesson 02 · 9 minutes</div><h1>从 main 到第一次目录刷新</h1><p class="lead">目标：把客户端启动、登录和事件传递说成一条连续调用链，而不是罗列类名。</p><div class="meta"><span class="pill">Qt事件循环</span><span class="pill">观察者</span><span class="pill">跨线程</span></div></header>
+
+<h2>1. 启动顺序</h2>
+<ol class="checklist"><li><code>QApplication</code> 创建 Qt 应用并准备事件循环。</li><li><code>CKernel::GetInstance()</code> 构造唯一客户端业务核心。</li><li>加载 <code>config.ini</code>，默认 IP 为源码中的地址、端口为8000。</li><li>创建下载根目录 <code>应用目录/NetDisk</code>。</li><li>创建 <code>TcpClientMediator</code> 并连接 <code>SIG_ReadyData</code>。</li><li>主动连接服务端，创建登录和主窗口。</li><li>建立 UI → CKernel 与 CKernel → UI 的信号槽关系。</li><li><code>a.exec()</code> 开始 Qt 事件循环。</li></ol>
+
+<h2>2. 登录成功后的闭环</h2>
+<pre><code>LoginDialog 收集手机号和密码
+→ SIG_LoginCommit
+→ CKernel::slot_loginCommit
+→ 密码拼接固定 KEY 后计算 MD5
+→ 发送 STRU_LOGIN_RQ
+→ 服务端查 t_user 并返回 userid/name
+→ CKernel::slot_dealLoginRs
+→ 隐藏登录窗，显示主窗口
+→ 为 userid 打开 SQLite 数据库
+→ restoreCachedTasks()
+→ 请求根目录文件列表和我的分享</code></pre>
+<div class="callout fact"><p>客户端本地缓存不是全局一个数据库，而是按用户 ID 使用 <code>database/&lt;userid&gt;.db</code>，避免不同账号的任务混在一起。</p></div>
+
+<h2>3. 为什么使用 signal/slot</h2>
+<p>这里最重要的不是“Qt有信号槽”，而是两种解耦：</p>
+<ul><li><strong>界面与业务解耦：</strong>MainDialog只表达“用户要上传”，不负责组包和发送。</li><li><strong>网络线程与GUI线程解耦：</strong>接收线程发出数据到达事件，槽函数由Qt事件系统调度；GUI控件不应在WinSock接收线程直接修改。</li></ul>
+<div class="callout warn"><p>当前信号携带 <code>char*</code>。队列连接只复制指针值，不管理缓冲区所有权。代码依赖“网络层分配、CKernel处理后delete[]”的人工约定；更稳妥的参数是 <code>QByteArray</code> 或拥有明确所有权的消息对象。</p></div>
+
+<h2>4. CKernel是什么角色</h2>
+<p>它既是应用控制器，又有外观模式作用：UI只面对登录、上传、下载等业务槽，不直接接触Socket、协议结构和SQLite。但它同时承担过多职责，不能称为严格MVC。</p>
+<table><thead><tr><th>可以说</th><th>不要说</th></tr></thead><tbody><tr><td>CKernel是客户端业务中枢和应用控制器</td><td>项目严格实现了MVC</td></tr><tr><td>Qt信号槽体现观察者模式</td><td>所有回调都自动线程安全</td></tr><tr><td>队列连接可跨线程投递事件</td><td>裸指针参数会自动深拷贝</td></tr></tbody></table>
+
+<h2>5. 面试口述</h2>
+<div class="card"><p>“客户端启动时先构造 QApplication，再通过局部静态单例创建 CKernel。CKernel加载网络配置和系统路径，创建TCP适配层、登录窗口和主窗口，并建立信号槽。登录成功后根据userid打开独立SQLite缓存，恢复未完成任务，再请求根目录和分享列表。UI层只发业务事件，协议封装、文件任务和网络交互集中在CKernel。网络接收发生在独立线程，数据通过Qt信号投递回业务/UI线程。”</p></div>
+
+<h2>6. 检索练习</h2>
+<div class="card"><p><strong>问题：</strong>为什么登录成功后才初始化SQLite，而不是程序启动就初始化？</p><button data-reveal="a2">检查参考答案</button><div class="answer" id="a2">数据库文件按用户ID命名。登录前还不知道用户身份；登录后初始化可以隔离不同账号的传输任务。更生产化的实现还要防止客户端伪造userid，并处理切换账号时旧任务与连接的清理。</div></div>
+
+<p class="source">推荐一手阅读：<a href="../../../ckernel.cpp">ckernel.cpp 234—324、909—939行附近</a>；原理参考：<a href="https://doc.qt.io/qt-6.5/signalsandslots.html">Qt Signals & Slots</a>。请先口述，再继续提问。</p>
+<nav class="lesson-nav"><a href="0001-project-map.html">← 上一课</a><a href="0003-tcp-framing.html">下一课：TCP消息边界 →</a></nav>
+<script src="../assets/quiz.js"></script></main></body></html>

@@ -1,0 +1,38 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第3课：TCP消息边界</title><link rel="stylesheet" href="../assets/course.css"></head><body><main>
+<header class="hero"><div class="eyebrow">Lesson 03 · 10 minutes</div><h1>为什么一次 recv 不是一个包</h1><p class="lead">目标：能从TCP字节流语义推导出长度帧、recvAll、sendAll和最大包长校验，而不是只背“解决粘包”。</p><div class="meta"><span class="pill">字节流</span><span class="pill">粘包/半包</span><span class="pill">短写</span></div></header>
+
+<h2>1. TCP给了什么，没给什么</h2>
+<p>TCP保证同一连接中的字节可靠、有序到达，但不保留应用调用边界。两次 <code>send(100)</code> 和 <code>send(200)</code>，接收端可能看到50、250，也可能一次看到300。</p>
+<div class="callout"><p>“粘包”和“半包”不是TCP破坏了数据，而是应用层错误地把一次 <code>recv</code> 当作一个消息。</p></div>
+
+<h2>2. 本项目的长度帧</h2>
+<pre><code>+--------------------+-------------------+----------------------+
+| uint32_t body_len  | PackType type     | request/response ... |
+| 网络字节序 4 bytes | 当前实际为 int    | 原生结构体字段        |
++--------------------+-------------------+----------------------+</code></pre>
+<ol><li>先循环读取完整4字节长度。</li><li>用 <code>ntohl</code> 转成本机长度。</li><li>拒绝小于协议号或大于8 MiB的长度。</li><li>分配对应缓冲区。</li><li>继续循环读取，直到包体完整。</li><li>业务层读取开头协议号并路由。</li></ol>
+
+<h2>3. 为什么send也要循环</h2>
+<p><code>send</code>返回的是本次进入内核发送缓冲区的字节数，不承诺等于请求长度。项目的 <code>sendAll</code>维护已发送偏移，并处理 <code>EINTR</code>。Linux端还使用 <code>MSG_NOSIGNAL</code>，避免向断开的连接写入时进程被 <code>SIGPIPE</code>终止。</p>
+
+<h2>4. 三层“成功”不要混淆</h2>
+<table><thead><tr><th>层次</th><th>成功表示</th><th>不表示</th></tr></thead><tbody>
+<tr><td>send成功</td><td>字节进入本机协议栈</td><td>对方写盘成功</td></tr>
+<tr><td>TCP确认</td><td>字节到达对端TCP栈</td><td>业务处理完成</td></tr>
+<tr><td>文件块ACK</td><td>项目约定对端处理了该块</td><td>最终完整摘要已验证</td></tr>
+</tbody></table>
+
+<h2>5. 当前协议的边界</h2>
+<div class="callout danger"><p>包长用了网络字节序，但结构体中的其他 <code>int</code>没有转换，且协议直接发送C++结构体内存。它依赖两端字节序、对齐和ABI恰好兼容，不是稳定的跨平台协议。</p></div>
+<ul><li>固定 <code>char[260]</code>浪费空间且容易截断。</li><li>柔性数组不是标准C++。</li><li>没有协议版本、request_id和消息认证。</li><li>文件内容包发送 <code>sizeof(struct)</code>，尾块也携带完整64 KiB数组。</li></ul>
+
+<h2>6. 面试口述</h2>
+<div class="card"><p>“TCP是可靠有序字节流，不保存应用消息边界，因此一次recv可能只得到半个包，也可能包含多个包。项目采用4字节网络序长度前缀：先recvAll长度，再校验范围并recvAll完整包体。发送端也用sendAll处理短写。这个方案解决了帧边界，但包体仍直接传原生结构体，只有长度做了字节序转换，所以跨编译器和异构平台兼容性不足，生产环境应改成显式序列化协议。”</p></div>
+
+<h2>7. 检索练习</h2>
+<div class="quiz" data-answer="B"><p><strong>TCP的send成功最准确代表什么？</strong></p><p>A. 对端写盘<br>B. 本机接收<br>C. 对端解析<br>D. 业务提交</p><button data-choice="A">A</button> <button data-choice="B">B</button> <button data-choice="C">C</button> <button data-choice="D">D</button><p data-feedback></p><p class="source">这里“本机接收”指本机协议栈接收了待发送数据。</p></div>
+<div class="card"><p><strong>追问：</strong>如果把服务端socket改成非阻塞，现有recvAll还能原样使用吗？</p><button data-reveal="a3">检查参考答案</button><div class="answer" id="a3">不能。非阻塞recv可能在帧尚未完整时返回EAGAIN；不能把它当断线。必须为每个连接保存接收缓冲区、已读偏移和解析状态，等下次可读事件继续。</div></div>
+
+<p class="source">一手代码：<a href="../../../netapi/net/TcpClient.cpp">客户端 TcpClient.cpp</a>、<a href="../../../NetDisk_server/NetDisk/src/block_epoll_net.cpp">服务端 block_epoll_net.cpp</a>。标准阅读：<a href="https://www.rfc-editor.org/rfc/rfc9293.html">RFC 9293</a>。不清楚字节流、阻塞或EAGAIN时，请继续提问。</p>
+<nav class="lesson-nav"><a href="0002-client-lifecycle.html">← 上一课</a><a href="0004-server-concurrency.html">下一课：服务端并发 →</a></nav>
+<script src="../assets/quiz.js"></script></main></body></html>

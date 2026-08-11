@@ -1,0 +1,24 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>NetDisk 术语表</title><link rel="stylesheet" href="../assets/course.css"></head><body><main>
+<header class="hero"><div class="eyebrow">Reference · Glossary</div><h1>术语表</h1><p class="lead">面试中统一使用这些定义，避免概念混淆。</p></header>
+<table><thead><tr><th>术语</th><th>在本项目中的准确含义</th></tr></thead><tbody>
+<tr><td>消息边界</td><td>应用层判断一条消息从哪里开始、在哪里结束；TCP本身不保存send调用边界。</td></tr>
+<tr><td>长度帧</td><td>用固定长度头部声明后续包体长度的应用层协议。</td></tr>
+<tr><td>短读/短写</td><td>一次recv/send处理的字节少于请求数量，并非自动代表错误。</td></tr>
+<tr><td>LT</td><td>水平触发；fd保持就绪时可重复通知。</td></tr>
+<tr><td>ET</td><td>边缘触发；通常需非阻塞并读取到EAGAIN。</td></tr>
+<tr><td>EPOLLONESHOT</td><td>事件触发一次后暂时禁用，需显式重新注册；当前只保护接收，不保证业务全程串行。</td></tr>
+<tr><td>背压</td><td>下游处理能力反向限制上游发送速度；本项目通过逐块ACK形成简单背压。</td></tr>
+<tr><td>秒传</td><td>MD5命中已完成物理对象后，只新增用户文件关系，不上传内容。</td></tr>
+<tr><td>物理文件</td><td>t_file和Linux路径代表的内容对象。</td></tr>
+<tr><td>逻辑文件</td><td>t_user_file中用户、目录、名称到物理对象的关系。</td></tr>
+<tr><td>引用计数</td><td>一个物理对象被多少逻辑关系使用；降为0才考虑删除物理内容。</td></tr>
+<tr><td>检查点</td><td>周期性保存的近似进度；崩溃恢复时应与实际文件状态校准。</td></tr>
+<tr><td>权威位置</td><td>恢复上传取服务端临时文件长度；恢复下载取客户端本地文件长度。</td></tr>
+<tr><td>幂等</td><td>同一请求重复执行不会产生额外副作用；当前项目尚未系统提供request_id幂等。</td></tr>
+<tr><td>预处理语句</td><td>SQL模板与参数绑定分离的MySQL C API执行方式；主要降低注入和转义错误。</td></tr>
+<tr><td>RAII</td><td>资源生命周期绑定对象生命周期；项目仅在锁守卫等局部使用。</td></tr>
+<tr><td>观察者</td><td>Qt信号发出事件，槽函数订阅响应；发送者不必知道具体接收者。</td></tr>
+<tr><td>适配器</td><td>TcpClientMediator将底层网络调用/回调转成上层统一接口和Qt信号。</td></tr>
+<tr><td>静态审查</td><td>从源码确认控制流和风险；不等同于匹配环境下编译、运行或压测。</td></tr>
+</tbody></table>
+<nav class="lesson-nav"><a href="protocol-cheatsheet.html">← 协议速查</a><a href="interview-cheatsheet.html">面试速查 →</a></nav></main></body></html>

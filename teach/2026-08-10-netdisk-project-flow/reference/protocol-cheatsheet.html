@@ -1,0 +1,24 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>NetDisk 协议速查</title><link rel="stylesheet" href="../assets/course.css"></head><body><main>
+<header class="hero"><div class="eyebrow">Reference · Protocol</div><h1>协议与状态速查</h1><p class="lead">记住语义分组，不必死背10000开头的每个数字。</p></header>
+
+<h2>帧格式</h2><pre><code>uint32 body_length (htonl/ntohl)
+PackType type       (原生int，未转字节序)
+body fields         (原生C++结构体)</code></pre>
+<p>最小包体：4字节协议号；最大包体：8 MiB；文件块数组：64 KiB。</p>
+
+<h2>协议分组</h2>
+<table><thead><tr><th>偏移</th><th>协议</th><th>方向</th></tr></thead><tbody>
+<tr><td>+0/+1</td><td>REGISTER_RQ/RS</td><td>注册</td></tr><tr><td>+2/+3</td><td>LOGIN_RQ/RS</td><td>登录</td></tr>
+<tr><td>+4/+5</td><td>UPLOAD_FILE_RQ/RS</td><td>上传元数据</td></tr><tr><td>+6/+7</td><td>FILE_CONTENT_RQ/RS</td><td>双向文件块与ACK</td></tr>
+<tr><td>+8/+9</td><td>GET_FILE_INFO_RQ/RS</td><td>目录列表</td></tr><tr><td>+10/+11</td><td>DOWNLOAD_FILE/FOLDER_RQ</td><td>下载请求</td></tr>
+<tr><td>+13/+14</td><td>FILE_HEADER_RQ/RS</td><td>下载头握手</td></tr><tr><td>+15/+16</td><td>ADD_FOLDER_RQ/RS</td><td>新建目录</td></tr>
+<tr><td>+17</td><td>QUICK_UPLOAD_RS</td><td>秒传响应</td></tr><tr><td>+18…+23</td><td>SHARE/MY_SHARE/GET_SHARE</td><td>分享</td></tr>
+<tr><td>+24</td><td>FOLDER_HEADER_RQ</td><td>创建本地目录；当前构造器写错type</td></tr><tr><td>+25/+26</td><td>DELETE_FILE_RQ/RS</td><td>批量删除</td></tr>
+<tr><td>+27…+29</td><td>CONTINUE_DOWNLOAD/UPLOAD</td><td>重建断点任务</td></tr><tr><td>+30/+31</td><td>TRANSFER_CTRL_RQ/RS</td><td>暂停/恢复</td></tr>
+</tbody></table>
+
+<h2>关键关联字段</h2><table><thead><tr><th>字段</th><th>用途</th><th>边界</th></tr></thead><tbody>
+<tr><td>userid</td><td>用户标识</td><td>当前来自包体，未与连接鉴权绑定</td></tr><tr><td>timestamp</td><td>客户端任务关联</td><td>hhmmsszzz，不是真正全局唯一</td></tr><tr><td>fileid</td><td>物理元数据ID</td><td>需和user/dir一起查关系</td></tr><tr><td>dir</td><td>虚拟目录</td><td>要求以/开始结束、禁止.与..段</td></tr><tr><td>len</td><td>块有效字节数</td><td>0…64KiB</td></tr><tr><td>size/pos</td><td>文件大小/位置</td><td>当前int，约2GiB边界</td></tr></tbody></table>
+
+<h2>生产协议应增加</h2><p>magic、version、flags、request_id、transfer_id、64位长度、显式字节序、序列化body、校验/认证信息。</p>
+<nav class="lesson-nav"><a href="project-flow.html">← 全流程</a><a href="glossary.html">术语表 →</a></nav></main></body></html>

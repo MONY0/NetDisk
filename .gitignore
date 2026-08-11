@@ -1,0 +1,47 @@
+# Qt Creator and local kit state
+.qtcreator/
+*.pro.user
+*.pro.user.*
+# Build outputs
+bulid-*/
+build-*/
+**/build-*/
+/debug/
+/release/
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.a
+*.lib
+object_script.*
+moc_*.cpp
+qrc_*.cpp
+ui_*.h
+# Runtime data and secrets
+config.ini
+*.db
+*.db-journal
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+NetDisk_server/[0-9]*/
+# Backup and generated evidence
+backups/
+artifacts/
+__pycache__/
+*.py[cod]
+# OS/editor files
+.DS_Store
+Thumbs.db
+*.swp

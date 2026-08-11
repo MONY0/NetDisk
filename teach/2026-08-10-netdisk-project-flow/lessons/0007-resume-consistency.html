@@ -1,0 +1,55 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第7课：断点续传与一致性</title><link rel="stylesheet" href="../assets/course.css"></head><body><main>
+<header class="hero"><div class="eyebrow">Lesson 07 · 12 minutes</div><h1>谁的进度才可信</h1><p class="lead">目标：讲清暂停、进程退出、重连和服务端重启后的恢复依据，并理解“记录进度”不等于“数据已持久化”。</p><div class="meta"><span class="pill">SQLite检查点</span><span class="pill">权威位置</span><span class="pill">幂等恢复</span></div></header>
+
+<h2>1. 客户端持久化什么</h2>
+<p>登录后按userid创建独立SQLite文件，其中 <code>t_upload</code> 和 <code>t_download</code>保存：</p>
+<pre><code>timestamp / fileid / name / dir / time / size / md5 / type
+absolutePath / pos / is_pause</code></pre>
+<p>进度不是每个64 KiB都写数据库，而是大约每256 KiB或完成时检查点，以减少频繁SQLite写入。</p>
+
+<h2>2. 上传恢复：服务端长度权威</h2>
+<pre><code>客户端恢复任务并打开源文件
+→ CONTINUE_UPLOAD_RQ
+→ 服务端按user+fileid+dir查物理路径
+→ 打开临时文件并lseek到末尾
+→ 返回服务端实际pos
+→ 客户端fseek到pos
+→ 继续发块</code></pre>
+<p>不能信客户端自己报告的上传位置，因为它可能先更新本地记录、服务端却尚未落盘，也可能被篡改。</p>
+
+<h2>3. 下载恢复：客户端文件长度权威</h2>
+<pre><code>客户端读取本地临时文件实际size
+→ CONTINUE_DOWNLOAD_RQ(pos)
+→ 服务端重建下载上下文
+→ lseek源文件到pos
+→ 继续发送下一块</code></pre>
+<p>SQLite可能落后于已写入磁盘的字节，因此恢复下载时以本地文件真实长度为准，而不是盲信SQLite中的pos。</p>
+
+<h2>4. 暂停和恢复的方向差异</h2>
+<table><thead><tr><th>方向</th><th>数据驱动方</th><th>恢复动作</th></tr></thead><tbody><tr><td>上传</td><td>客户端主动发下一块</td><td>服务端返回pos，客户端重新启动发送</td></tr><tr><td>下载</td><td>服务端主动发下一块</td><td>服务端收到pos后重新启动读取发送</td></tr></tbody></table>
+
+<h2>5. 仅比较长度还不够</h2>
+<div class="callout warn"><p>长度相同不代表前缀内容相同。客户端源文件可能在暂停期间被修改，本地下载文件也可能被其他程序覆盖。可靠方案应保存分片摘要，恢复时校验最后一个已完成分片，最终再验证完整SHA-256。</p></div>
+
+<h2>6. timestamp不是可靠任务ID</h2>
+<p>当前timestamp来自 <code>hhmmsszzz</code>，不包含日期、设备和随机数。进程内碰撞会递增，但跨重启、多设备和同账号并发仍可能碰撞。服务端组合键 <code>userid * 1e9 + timestamp</code>只是把两个数拼起来，并没有创造真正全局唯一性。</p>
+<p>更稳妥：由服务端生成UUID形式的 <code>transfer_id</code>，客户端SQLite、协议和服务端任务表统一使用。</p>
+
+<h2>7. 数据库与文件系统的一致性</h2>
+<p>事务可以保证多条MySQL语句原子提交，但不能把 <code>write/unlink/rename</code>自动加入同一事务。生产上传通常采用：</p>
+<pre><code>创建临时对象
+→ 写分片并保存状态
+→ 校验完整摘要
+→ 数据库提交AVAILABLE
+→ 原子rename/对象存储commit
+→ 补偿任务处理异常中间态</code></pre>
+
+<h2>8. 面试口述</h2>
+<div class="card"><p>“客户端按用户用SQLite保存传输元数据和检查点，但恢复时不完全相信数据库。上传以服务端临时文件长度为权威，因为只有服务端知道已经落盘多少；下载以客户端本地文件实际长度为权威，因为SQLite检查点可能落后。双方通过继续上传/下载协议重新建立文件句柄和偏移。当前只校验长度、任务ID也只是当天时间，生产化应使用服务端生成的transfer_id、分片摘要、最终哈希和异常状态补偿。”</p></div>
+
+<h2>9. 检索练习</h2>
+<div class="quiz" data-answer="D"><p><strong>下载恢复最可信的进度来源是？</strong></p><p>A. 界面进度<br>B. 服务端map<br>C. SQLite位置<br>D. 本地文件长</p><button data-choice="A">A</button> <button data-choice="B">B</button> <button data-choice="C">C</button> <button data-choice="D">D</button><p data-feedback></p></div>
+
+<p class="source">一手代码：<a href="../../../ckernel.cpp">ckernel.cpp 54—164、273—324、772—819行附近</a>、<a href="../../../NetDisk_server/NetDisk/src/clogic.cpp">clogic.cpp 865—1003行附近</a>。请用“权威位置”这个词完整复述一次。</p>
+<nav class="lesson-nav"><a href="0006-download-directory-sharing.html">← 上一课</a><a href="0008-patterns-and-boundaries.html">下一课：设计模式边界 →</a></nav>
+<script src="../assets/quiz.js"></script></main></body></html>

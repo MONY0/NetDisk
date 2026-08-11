@@ -1,0 +1,39 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>NetDisk 全流程图</title><link rel="stylesheet" href="../assets/course.css"></head><body><main>
+<header class="hero"><div class="eyebrow">Reference · Print friendly</div><h1>NetDisk 全流程图</h1><p class="lead">复习时先只看每段第一行，尝试从记忆补全；卡住后再看细节。</p></header>
+
+<h2>启动</h2><pre><code>客户端：QApplication → CKernel单例 → 配置/路径 → TCP → 窗口/信号槽 → Qt事件循环
+服务端：TcpKernel单例 → MySQL → epoll/线程池 → 协议表 → EventLoop</code></pre>
+
+<h2>注册与登录</h2><pre><code>注册：UI校验 → password固定盐MD5 → REGISTER_RQ → 查手机号/昵称 → 插t_user → 建用户目录
+登录：LOGIN_RQ → 查t_user → 比较MD5值 → LOGIN_RS(userid,name) → 打开用户SQLite → 恢复任务 → 列目录</code></pre>
+
+<h2>普通上传</h2><pre><code>本地文件 → MD5/size/name/time → UPLOAD_FILE_RQ
+→ 路径与同名校验 → MD5未命中
+→ 创建物理临时文件 → t_file(state=0) → t_user_file → fileid
+→ [客户端读64KiB → 服务端写 → ACK] × N
+→ 关闭fd → t_file(state=1) → 可下载/秒传</code></pre>
+
+<h2>秒传</h2><pre><code>UPLOAD_FILE_RQ → MD5 + state=1命中 → 插入t_user_file → 引用+1 → QUICK_UPLOAD_RS
+不发送文件内容；当前未做服务端最终MD5校验。</code></pre>
+
+<h2>单文件下载</h2><pre><code>DOWNLOAD_FILE_RQ → user_file_info验证逻辑归属 → 打开物理文件
+→ FILE_HEADER_RQ → 客户端建目录/文件/SQLite → FILE_HEADER_RS
+→ [服务端读64KiB → 客户端写 → ACK] × N → 双方清理任务</code></pre>
+
+<h2>文件夹</h2><pre><code>folder关系 → 发送创建目录头 → 查询 childDir 直接孩子
+→ file走单文件下载；folder继续递归
+已知缺陷：FolderHeader构造器错误设置为FileHeader协议号。</code></pre>
+
+<h2>暂停与续传</h2><pre><code>上传：客户端任务 → CONTINUE_UPLOAD → 服务端临时文件长度权威 → 客户端fseek → 继续发
+下载：客户端本地文件长度权威 → CONTINUE_DOWNLOAD(pos) → 服务端lseek → 继续发
+SQLite是检查点，不是绝对权威。</code></pre>
+
+<h2>分享与删除</h2><pre><code>分享：关系写share code → 接收者按code查询 → 递归复制t_user_file关系 → 不复制物理文件
+删除：删用户关系 → 引用-1 → folder递归孩子 → count=0才删物理对象和t_file</code></pre>
+
+<h2>服务端一包的线程路径</h2><pre><code>epoll_wait → recv_event → Producer_add(recv_task)
+→ recv_task读包长+包体 → Producer_add(Buffer_Deal) → 重新激活fd
+→ Buffer_Deal → TcpKernel::DealData → CLogic处理
+注意：重新激活早于业务完成，同连接业务可能并发。</code></pre>
+
+<nav class="lesson-nav"><a href="../lessons/0001-project-map.html">课程入口</a><a href="interview-cheatsheet.html">面试速查 →</a></nav></main></body></html>

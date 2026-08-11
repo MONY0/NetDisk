@@ -1,0 +1,49 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第6课：下载、目录、分享与删除</title><link rel="stylesheet" href="../assets/course.css"></head><body><main>
+<header class="hero"><div class="eyebrow">Lesson 06 · 13 minutes</div><h1>从文件头到递归目录</h1><p class="lead">目标：区分文件下载、文件夹递归、分享复制关系和引用计数删除，并发现当前确定存在的协议缺陷。</p><div class="meta"><span class="pill">文件头握手</span><span class="pill">虚拟目录</span><span class="pill">递归关系</span></div></header>
+
+<h2>1. 单文件下载</h2>
+<pre><code>客户端：DOWNLOAD_FILE_RQ(userid,fileid,dir,timestamp)
+→ 服务端：按user+dir+fileid查user_file_info
+→ 打开物理文件，保存下载上下文
+→ FILE_HEADER_RQ(name,size,md5,dir,timestamp)
+→ 客户端创建本地目录和文件、保存SQLite任务
+→ FILE_HEADER_RS
+→ 服务端读64 KiB并发送FILE_CONTENT_RQ
+→ 客户端写盘并返回FILE_CONTENT_RS
+→ 逐块循环直至size</code></pre>
+<p>文件头握手的意义是：客户端先确认能够创建目标文件，服务端才发送内容，避免无效流量。</p>
+
+<h2>2. 虚拟目录如何表示</h2>
+<p>数据库关系中保存的是字符串路径，例如 <code>/资料/网络/</code>。文件夹本身也作为 <code>f_type='folder'</code>的记录存在；查询目录时按 <code>u_id + f_dir</code>读取直接孩子。</p>
+<p>因此它没有在内存里构建组合模式对象树，而是依靠路径字符串和递归查询表达层级。</p>
+
+<h2>3. 文件夹下载</h2>
+<p>服务端先发送“创建文件夹”头，再查询新目录下所有孩子。文件调用下载文件逻辑，文件夹继续递归；每个子项通过递增timestamp获得任务标识。</p>
+<div class="callout danger"><p><strong>已核实缺陷：</strong><code>STRU_FOLDER_HEADER_RQ</code>构造函数把type初始化为普通文件头 <code>_DEF_PACK_FILE_HEADER_RQ</code>，而不是文件夹头 <code>_DEF_PACK_FOLDER_HEADER_RQ</code>。客户端因此会把创建目录消息路由到创建文件处理函数。文件夹下载不能被诚实描述为已可靠闭环。</p></div>
+
+<h2>4. 分享不是复制物理文件</h2>
+<ol><li>分享者选择一个或多个逻辑文件。</li><li>服务端生成9位分享码并写入这些关系的 <code>s_link/s_linkTime</code>。</li><li>接收者输入分享码。</li><li>服务端查出分享项，在接收者目标目录新增 <code>t_user_file</code>关系。</li><li>如果是文件夹，递归复制所有子项的关系。</li></ol>
+<p>物理 <code>t_file</code>不复制，所以分享和秒传都依赖“逻辑关系复用物理对象”。</p>
+<div class="callout warn"><p>分享码使用 <code>random()</code>生成，服务端却调用 <code>srand()</code>初始化；此外没有过期校验、访问密码、尝试限流和强随机性保证。不能把它当安全令牌。</p></div>
+
+<h2>5. 删除为什么复杂</h2>
+<pre><code>删除用户关系
+→ 触发器减少f_count
+→ 文件夹：递归删除孩子关系
+→ 查询剩余引用数
+→ count &gt; 0：保留物理对象
+→ count == 0：删除物理文件/目录和t_file</code></pre>
+<p>MySQL事务不能回滚Linux的 <code>unlink/rmdir</code>。当前删除不是跨数据库和文件系统的原子事务，中途失败可能部分完成。生产方案通常是逻辑删除 + 可重试异步GC。</p>
+
+<h2>6. 权限边界</h2>
+<div class="callout danger"><p>虽然下载查询包含 <code>u_id</code>，但服务端没有验证这个userid是否属于当前clientfd。攻击者可修改协议字段冒充其他用户。这是项目最高优先级的安全缺陷。</p></div>
+
+<h2>7. 面试口述</h2>
+<div class="card"><p>“下载先发送文件头，客户端成功创建本地文件并ACK后，服务端才逐块发送内容。目录由数据库中的虚拟路径和folder记录表达，文件夹下载通过递归查询孩子实现。分享也不复制物理内容，而是在接收者目录新增用户文件关系，因此与秒传共享引用计数模型。删除先删逻辑关系，引用为0才删物理对象；由于MySQL事务不能覆盖文件系统操作，生产环境应采用逻辑删除和异步GC。当前文件夹头协议号初始化错误，是已经定位但尚未修复的缺陷。”</p></div>
+
+<h2>8. 检索练习</h2>
+<div class="card"><p><strong>问题：</strong>为什么分享文件夹时要递归复制关系，而不是只复制顶层folder关系？</p><button data-reveal="a6">检查参考答案</button><div class="answer" id="a6">当前目录列表通过接收者自己的user_id和f_dir查询。若只复制顶层关系，进入该目录后查不到任何孩子；必须把每个后代文件的用户关系按新的虚拟路径递归建立。</div></div>
+
+<p class="source">一手代码：<a href="../../../NetDisk_server/NetDisk/src/clogic.cpp">clogic.cpp 560—861、1130—1609行附近</a>、<a href="../../../netapi/net/packdef.h">客户端packdef.h的文件夹头</a>。请把“分享关系复制”和“物理文件复制”说出区别。</p>
+<nav class="lesson-nav"><a href="0005-upload-dedup.html">← 上一课</a><a href="0007-resume-consistency.html">下一课：断点续传 →</a></nav>
+<script src="../assets/quiz.js"></script></main></body></html>

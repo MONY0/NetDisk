@@ -1,0 +1,33 @@
+<RCC>
+    <qresource prefix="/">
+        <file>images/addFile.png</file>
+        <file>images/Cancel_32x32.png</file>
+        <file>images/check.png</file>
+        <file>images/CheckBox_32x32.png</file>
+        <file>images/delete.png</file>
+        <file>images/file.png</file>
+        <file>images/folder.png</file>
+        <file>images/logo.ico</file>
+        <file>images/pause.png</file>
+        <file>images/play.png</file>
+        <file>images/search.png</file>
+        <file>images/share.png</file>
+        <file>images/transmit.ico</file>
+        <file>face/btn_avatar_a0.png</file>
+        <file>face/btn_avatar_a1.png</file>
+        <file>face/btn_avatar_a2.png</file>
+        <file>face/btn_avatar_a10.png</file>
+        <file>face/btn_avatar_a11.png</file>
+        <file>face/btn_avatar_a19.png</file>
+        <file>face/btn_avatar_a20.png</file>
+        <file>face/btn_avatar_a33.png</file>
+        <file>face/btn_avatar_a83.png</file>
+        <file>face/btn_avatar_a84.png</file>
+        <file>face/btn_avatar_a91.png</file>
+        <file>face/btn_avatar_a92.png</file>
+        <file>face/btn_avatar_a93.png</file>
+        <file>face/btn_avatar_a94.png</file>
+        <file>face/btn_avatar_a95.png</file>
+        <file>tb/nj.png</file>
+    </qresource>
+</RCC>

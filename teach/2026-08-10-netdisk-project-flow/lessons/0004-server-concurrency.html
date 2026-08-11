@@ -1,0 +1,47 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第4课：服务端并发模型</title><link rel="stylesheet" href="../assets/course.css"></head><body><main>
+<header class="hero"><div class="eyebrow">Lesson 04 · 12 minutes</div><h1>epoll、ONESHOT与线程池</h1><p class="lead">目标：准确描述当前混合模型，并能解释它为什么不是“全非阻塞Reactor”。</p><div class="meta"><span class="pill">LT epoll</span><span class="pill">阻塞客户端socket</span><span class="pill">生产者消费者</span></div></header>
+
+<h2>1. 网络事件路径</h2>
+<pre><code>main → TcpKernel::Open
+→ 连接MySQL
+→ Block_Epoll_Net::InitNet
+→ 创建监听socket并设为非阻塞
+→ bind / listen / epoll_create
+→ 注册EPOLLIN
+→ EventLoop: epoll_wait
+→ accept_event 或 recv_event</code></pre>
+<p>监听socket非阻塞；接受后的客户端socket设置缓冲区、TCP_NODELAY和30秒收发超时，但设置非阻塞的代码被注释。因此工作线程使用阻塞式 <code>recvAllFd</code>。</p>
+
+<h2>2. LT、ET和本项目</h2>
+<table><thead><tr><th>模式</th><th>通知语义</th><th>典型要求</th></tr></thead><tbody><tr><td>LT</td><td>只要仍就绪，就会继续通知</td><td>可阻塞或非阻塞；更容易编写</td></tr><tr><td>ET</td><td>状态变化时通知</td><td>通常非阻塞并读到EAGAIN</td></tr><tr><td>本项目</td><td>LT + EPOLLONESHOT</td><td>工作线程阻塞读完整一帧</td></tr></tbody></table>
+<div class="callout warn"><p>不要说“用了epoll，所以所有I/O都是非阻塞”。epoll只是就绪通知机制；具体socket是否阻塞由文件状态标志决定。</p></div>
+
+<h2>3. EPOLLONESHOT真正保证什么</h2>
+<p>一个客户端事件被取出后暂时失效，接收线程读完一帧后显式重新注册。这样可以避免两个线程同时从同一个socket读取字节流。</p>
+<div class="callout danger"><p>当前代码先把业务任务投递为 <code>Buffer_Deal</code>，随后立刻重新激活fd。所以下一个包可能在上一个业务尚未完成时被处理。ONESHOT保证“接收阶段不并发”，没有保证“同连接业务严格串行”。</p></div>
+
+<h2>4. 为什么还要线程池</h2>
+<p>epoll线程不应直接执行MySQL查询、递归目录或文件I/O，否则一个慢请求会阻塞整个事件循环。线程池通过环形队列实现生产者—消费者：</p>
+<pre><code>epoll发现可读 → 投递recv_task
+recv_task读完整帧 → 投递Buffer_Deal
+工作线程执行协议分发和业务
+
+队列满：生产者等待not_full
+队列空：消费者等待not_empty</code></pre>
+<p>管理线程每10秒采样存活、忙碌和排队数量，在10到200工作线程之间扩缩。</p>
+
+<h2>5. 并发安全的三个误区</h2>
+<ol><li><strong>MyMap加锁不等于对象安全：</strong><code>find</code>返回裸指针后立即解锁，其他线程可能删除对象。</li><li><strong>MySQL有锁不等于并行：</strong>单连接加递归锁保证调用安全，但所有SQL最终串行。</li><li><strong>发送有锁不等于高性能：</strong>所有连接共享全局发送锁，慢连接可能阻塞其他连接。</li></ol>
+
+<h2>6. 改进模型</h2>
+<ul><li>客户端socket非阻塞，每连接维护接收状态机。</li><li>每连接一个串行strand/任务队列，业务完成后再消费下一包。</li><li>传输map保存 <code>shared_ptr&lt;TransferContext&gt;</code>，明确生命周期。</li><li>每连接独立发送队列，只在EPOLLOUT时继续短写。</li><li>MySQL连接池：一个任务/事务借用一个连接。</li></ul>
+
+<h2>7. 面试口述</h2>
+<div class="card"><p>“服务端采用LT epoll监听就绪事件，监听socket非阻塞，但客户端socket当前是阻塞模式。EPOLLONESHOT避免同一fd被多个接收线程同时读取；工作线程先读取包长和完整包体，再把业务任务投递到动态线程池。这个模型实现简单，也把阻塞数据库和文件操作移出事件循环，但慢连接会占用工作线程，而且业务任务投递后立即重置ONESHOT，所以同一连接的业务仍可能并行。生产化会改为非阻塞连接状态机和连接级串行队列。”</p></div>
+
+<h2>8. 检索练习</h2>
+<div class="card"><p><strong>问题：</strong>为什么条件变量等待必须用while而不是if？</p><button data-reveal="a4">检查参考答案</button><div class="answer" id="a4">条件变量允许虚假唤醒；多个消费者被唤醒时，前一个线程也可能已经取走任务。被唤醒后必须再次检查队列是否仍为空、线程池是否仍运行。</div></div>
+
+<p class="source">一手代码：<a href="../../../NetDisk_server/NetDisk/src/block_epoll_net.cpp">block_epoll_net.cpp</a>、<a href="../../../NetDisk_server/NetDisk/src/Thread_pool.cpp">Thread_pool.cpp</a>。原理参考：<a href="https://man7.org/linux/man-pages/man7/epoll.7.html">epoll(7)</a>。请尝试画出两个任务队列再提问。</p>
+<nav class="lesson-nav"><a href="0003-tcp-framing.html">← 上一课</a><a href="0005-upload-dedup.html">下一课：上传与秒传 →</a></nav>
+<script src="../assets/quiz.js"></script></main></body></html>
