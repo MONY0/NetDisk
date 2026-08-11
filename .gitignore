@@ -39,6 +39,7 @@ NetDisk_server/[0-9]*/
 # Backup and generated evidence
 backups/
 artifacts/
+.worktrees/
 __pycache__/
 *.py[cod]
 # OS/editor files
