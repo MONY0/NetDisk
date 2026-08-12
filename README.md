@@ -19,7 +19,6 @@ NetDisk 是一个 C++/Qt 网盘项目，包含 Windows 客户端和 Linux 服务
 
 - [项目布局与权威边界](docs/project-layout.md)
 - [构建与运行](docs/build-and-run.md)
-- 以下两份文档由 Phase 0 Task 5 提供；在当前中间提交中尚不可用：
 - [冒烟测试](docs/testing/smoke-test.md)
 - [备份与恢复](docs/operations/backup-and-restore.md)
 - [优化设计](docs/superpowers/specs/2026-08-11-netdisk-optimization-design.md)
